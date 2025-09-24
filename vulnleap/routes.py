@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app, abort
 from vulnleap.models.mortgage_quote import MortgageQuote
 from vulnleap.models import db, User, Session, OrgLevelSetting
 import bcrypt
@@ -161,7 +161,14 @@ def register():
             return redirect(url_for('main.register'))
 
         if quote_id:
+            # Only allow claiming a quote if it is currently unowned
             quote = MortgageQuote.query.get(quote_id)
+            if not quote:
+                flash("Quote not found.", "danger")
+                return redirect(url_for('main.register'))
+            if quote.user_id is not None and quote.user_id != user.id:
+                flash("You cannot claim this quote.", "danger")
+                return redirect(url_for('main.register'))
             quote.user_id = user.id
             db.session.commit()
 
@@ -258,6 +265,9 @@ def quote_page(quote_id):
     if not quote:
         flash("Quote not found.", "danger")
         return redirect(url_for('main.user'))
+    # Authorization: only owners can view their quotes unless admin/superadmin
+    if user.user_type not in ('admin', 'superadmin') and quote.user_id != user.id:
+        abort(404)
     return render_template('existing_quote.html', quote=quote)
 
 @main.route('/admin')
